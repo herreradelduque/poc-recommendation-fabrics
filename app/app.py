@@ -22,21 +22,51 @@ def main():
         # Mostrar todos los registros del producto seleccionado
         st.write("**Todos los registros de este producto:**")
         all_records = products[products['Product'] == product_name]
+        product_category = st.selectbox("Selecciona un material", all_records['Material'].unique())
+        all_records = all_records[all_records['Material'] == product_category]
         st.dataframe(all_records)  # Mostrar todos los registros del producto
 
     # Pestaña 2: Recomendaciones de Productos
     with tab2:
         st.header("Recomendaciones de Productos")
 
-        # Selector para elegir el producto para recomendaciones
-        product_name_for_recommendations = st.selectbox("Selecciona un producto para recomendaciones", products['Product'].unique())
+        # Crear checkboxes para seleccionar la columna de recomendación
+        available_columns = [col for col in products.columns if col not in ['Price', 'Product']]
 
-        # Generar las recomendaciones
-        recommended_products = recommend_product(product_name_for_recommendations, products)
+        # Contenedor horizontal para los checkboxes
+        cols = st.columns(len(available_columns))
+        selected_criterion = None
 
-        # Mostrar los productos recomendados
-        st.write("**Productos recomendados:**")
-        st.dataframe(recommended_products)
+        # Crear un checkbox para cada columna
+        for i, column in enumerate(available_columns):
+            with cols[i]:
+                if st.checkbox(column, key=f"check_{column}"):
+                    # Desactivar los otros checkboxes
+                    for other_col in available_columns:
+                        if other_col != column and st.session_state.get(f"check_{other_col}"):
+                            st.session_state[f"check_{other_col}"] = False
+                    selected_criterion = column
+
+        if selected_criterion:
+            # Obtener valores únicos de la columna seleccionada
+            unique_values = products[selected_criterion].unique()
+
+            # Selector para elegir el valor específico
+            selected_value = st.selectbox(
+                f"Selecciona un valor de {selected_criterion}",
+                unique_values
+            )
+
+            # Generar las recomendaciones basadas en el criterio y valor seleccionados
+            recommended_products = recommend_product(
+                selected_criterion,
+                products,
+                criterion_value=selected_value
+            )
+
+            # Mostrar los productos recomendados
+            st.write(f"**Productos recomendados con {selected_criterion} = {selected_value}:**")
+            st.dataframe(recommended_products)
 
 # Ejecutar la app de Streamlit
 if __name__ == "__main__":

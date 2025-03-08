@@ -37,32 +37,44 @@ def calculate_similarity(products_numeric):
     similarity_matrix = cosine_similarity(products_numeric)
     return similarity_matrix
 
-def recommend_product(product_name, products):
+def recommend_product(criterion, products, criterion_value, n_recommendations=3):
     """
-    Genera recomendaciones para un producto basado en su similitud con otros productos.
+    Genera recomendaciones basadas en un criterio específico usando similitud del coseno.
+
+    Args:
+        criterion (str): Columna a utilizar para la recomendación
+        products (pd.DataFrame): DataFrame con todos los productos
+        criterion_value: Valor específico del criterio seleccionado
+        n_recommendations (int): Número de recomendaciones a devolver
     """
+    # Filtrar productos que coincidan con el criterio
+    base_products = products[products[criterion] == criterion_value]
+
     # Codificar las características de los productos
     products_encoded = encode_product_features(products)
 
     # Extraer las columnas numéricas
-    products_numeric = products_encoded.drop('Product', axis=1, errors='ignore')  # Asegurarse de no eliminar 'Product' si no existe
-
-    # Obtener el índice del producto seleccionado
-    product_idx = get_product_index(products, product_name)
+    products_numeric = products_encoded.drop('Product', axis=1, errors='ignore')
 
     # Calcular la matriz de similitudes
     similarity_matrix = calculate_similarity(products_numeric)
 
-    # Obtener las recomendaciones (similitudes más altas)
-    recommendations = similarity_matrix[product_idx]
+    # Obtener los índices de los productos base
+    base_indices = base_products.index
 
-    # Ordenar las recomendaciones por similitud (de mayor a menor)
-    recommended_indices = recommendations.argsort()[-4:-1][::-1]  # Top 3 recomendaciones
+    # Calcular la similitud promedio con todos los productos base
+    avg_similarities = similarity_matrix[base_indices].mean(axis=0)
 
-    # Obtener los productos recomendados con toda su información
+    # Ordenar por similitud (excluyendo los productos base)
+    recommended_indices = avg_similarities.argsort()[::-1]
+
+    # Filtrar los productos que ya están en la base
+    recommended_indices = [idx for idx in recommended_indices if idx not in base_indices]
+
+    # Seleccionar los top n productos recomendados
+    recommended_indices = recommended_indices[:n_recommendations]
+
+    # Obtener los productos recomendados
     recommended_products = products.iloc[recommended_indices]
-
-    # Eliminar el producto seleccionado de las recomendaciones (si aparece)
-    recommended_products = recommended_products[recommended_products['Product'] != product_name]
 
     return recommended_products
