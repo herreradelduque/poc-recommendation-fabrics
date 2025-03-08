@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 def load_products(file_path='data/products.csv'):
@@ -10,59 +11,96 @@ def load_products(file_path='data/products.csv'):
 
 def encode_product_features(products):
     """
-    Codifica las características categóricas de los productos (como 'Material', 'Color', etc.)
-    y devuelve los productos con las columnas numéricas necesarias para la recomendación.
+    Codifica las características categóricas de los productos.
     """
-    # Convertir las características categóricas en variables dummy (one-hot encoding)
-    products_encoded = pd.get_dummies(products, columns=['Category', 'Material', 'Color', 'Calidez_Color', 'Textura'])
+    # Crear copia para no modificar el original
+    products_to_encode = products.copy()
+
+    # Convertir características categóricas en variables dummy
+    products_encoded = pd.get_dummies(
+        products_to_encode,
+        columns=['Category', 'Material', 'Color', 'Calidez_Color', 'Textura']
+    )
 
     # Asegurarse de que 'Product' sea la columna de identificación
     if 'Product' not in products_encoded.columns:
         raise ValueError("La columna 'Product' no está presente en los datos codificados.")
 
-    # Eliminar la columna 'Product' para la similitud
-    products_numeric = products_encoded.drop('Product', axis=1, errors='ignore')  # Eliminar solo si existe
+    # Eliminar columnas no numéricas
+    products_numeric = products_encoded.drop(['Product'], axis=1, errors='ignore')
     return products_numeric
 
-def get_product_index(products, product_name):
+def calculate_similarity(reference_products, candidate_products, products_encoded):
     """
-    Devuelve el índice del producto seleccionado.
+    Calcula la similitud del coseno entre productos de referencia y candidatos.
     """
-    return products[products['Product'] == product_name].index[0]
+    similarities = []
+    for idx_rec in candidate_products.index:
+        sim_scores = []
+        for idx_ref in reference_products.index:
+            sim = cosine_similarity(
+                products_encoded.loc[[idx_ref]],
+                products_encoded.loc[[idx_rec]]
+            )[0][0]
+            sim_scores.append(sim)
+        similarities.append(np.mean(sim_scores))
+    return similarities
 
-def calculate_similarity(products_numeric):
+def recommend_product(criteria, products_df, criterion_values):
     """
-    Calcula la matriz de similitud entre productos.
+    Genera recomendaciones de productos basadas en criterios y similitud.
     """
-    similarity_matrix = cosine_similarity(products_numeric)
-    return similarity_matrix
+    # Codificar características para cálculo de similitud
+    products_encoded = encode_product_features(products_df)
 
-def recommend_product(product_name, products):
-    """
-    Genera recomendaciones para un producto basado en su similitud con otros productos.
-    """
-    # Codificar las características de los productos
-    products_encoded = encode_product_features(products)
+    # Caso de un solo criterio
+    if len(criteria) == 1:
+        criterion = criteria[0]
+        value = criterion_values[criterion]
 
-    # Extraer las columnas numéricas
-    products_numeric = products_encoded.drop('Product', axis=1, errors='ignore')  # Asegurarse de no eliminar 'Product' si no existe
+        # Obtener productos de referencia y alternativas
+        reference_products = products_df[products_df[criterion] == value]
+        recommended = products_df[products_df[criterion] != value].copy()
 
-    # Obtener el índice del producto seleccionado
-    product_idx = get_product_index(products, product_name)
+        if not recommended.empty:
+            # Calcular similitudes
+            similarities = calculate_similarity(reference_products, recommended, products_encoded)
+            recommended['Similitud'] = similarities
+            return recommended.sort_values(['Similitud', 'Price'], ascending=[False, True]).drop_duplicates()
 
-    # Calcular la matriz de similitudes
-    similarity_matrix = calculate_similarity(products_numeric)
+    # Caso de múltiples criterios
+    recommended = products_df.copy()
 
-    # Obtener las recomendaciones (similitudes más altas)
-    recommendations = similarity_matrix[product_idx]
+    # Máscara para coincidencias exactas
+    exact_match_mask = pd.Series(True, index=recommended.index)
+    for criterion, value in criterion_values.items():
+        exact_match_mask &= (recommended[criterion] == value)
 
-    # Ordenar las recomendaciones por similitud (de mayor a menor)
-    recommended_indices = recommendations.argsort()[-4:-1][::-1]  # Top 3 recomendaciones
+    # Máscara para coincidencias parciales
+    filter_mask = pd.Series(False, index=recommended.index)
+    for criterion, value in criterion_values.items():
+        filter_mask |= (recommended[criterion] == value)
 
-    # Obtener los productos recomendados con toda su información
-    recommended_products = products.iloc[recommended_indices]
+    # Filtrar recomendaciones
+    recommended = recommended[filter_mask & ~exact_match_mask]
 
-    # Eliminar el producto seleccionado de las recomendaciones (si aparece)
-    recommended_products = recommended_products[recommended_products['Product'] != product_name]
+    if not recommended.empty:
+        # Calcular similitudes para múltiples criterios
+        reference_products = products_df[exact_match_mask]
+        similarities = calculate_similarity(reference_products, recommended, products_encoded)
+        recommended['Similitud'] = similarities
+        return recommended.sort_values(['Similitud', 'Price'], ascending=[False, True]).drop_duplicates()
 
-    return recommended_products
+    # Si no hay recomendaciones, usar primer criterio
+    if len(criteria) > 1:
+        primary_criterion = criteria[0]
+        primary_value = criterion_values[primary_criterion]
+        recommended = products_df[products_df[primary_criterion] == primary_value].copy()
+
+        if not recommended.empty:
+            reference_products = products_df[exact_match_mask]
+            similarities = calculate_similarity(reference_products, recommended, products_encoded)
+            recommended['Similitud'] = similarities
+            return recommended.sort_values(['Similitud', 'Price'], ascending=[False, True]).drop_duplicates()
+
+    return recommended.sort_values('Price').drop_duplicates()
