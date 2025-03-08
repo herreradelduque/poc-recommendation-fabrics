@@ -6,68 +6,76 @@ def main():
     # Cargar los productos
     products = load_products('data/products.csv')
 
-    # Título de la app en Streamlit
+    # Título de la app
     st.title("Sistema de Recomendación de Tejidos")
 
-    # Crear las pestañas
+    # Crear pestañas
     tab1, tab2 = st.tabs(["Buscar Producto", "Recomendaciones"])
 
     # Pestaña 1: Buscar Producto
     with tab1:
         st.header("Buscar Producto en la Base de Datos")
 
-        # Selector para elegir el producto
         product_name = st.selectbox("Selecciona un producto", products['Product'].unique())
 
-        # Mostrar todos los registros del producto seleccionado
-        st.write("**Todos los registros de este producto:**")
         all_records = products[products['Product'] == product_name]
-        product_category = st.selectbox("Selecciona un material", all_records['Material'].unique())
-        all_records = all_records[all_records['Material'] == product_category]
-        st.dataframe(all_records)  # Mostrar todos los registros del producto
+        product_category = st.selectbox(
+            "Selecciona un material",
+            all_records['Material'].unique()
+        )
 
-    # Pestaña 2: Recomendaciones de Productos
+        filtered_records = all_records[all_records['Material'] == product_category]
+        st.write("**Registros del producto:**")
+        st.dataframe(filtered_records)
+
+    # Pestaña 2: Recomendaciones
     with tab2:
         st.header("Recomendaciones de Productos")
 
-        # Crear checkboxes para seleccionar la columna de recomendación
-        available_columns = [col for col in products.columns if col not in ['Price', 'Product']]
+        # Columnas disponibles para filtrar
+        available_columns = [col for col in products.columns if col not in ['Price', 'Color']]
 
-        # Contenedor horizontal para los checkboxes
+        # Crear checkboxes en columnas
         cols = st.columns(len(available_columns))
-        selected_criterion = None
+        selected_criteria = []
 
-        # Crear un checkbox para cada columna
         for i, column in enumerate(available_columns):
             with cols[i]:
                 if st.checkbox(column, key=f"check_{column}"):
-                    # Desactivar los otros checkboxes
-                    for other_col in available_columns:
-                        if other_col != column and st.session_state.get(f"check_{other_col}"):
-                            st.session_state[f"check_{other_col}"] = False
-                    selected_criterion = column
+                    selected_criteria.append(column)
 
-        if selected_criterion:
-            # Obtener valores únicos de la columna seleccionada
-            unique_values = products[selected_criterion].unique()
+        # Validar número de criterios
+        if len(selected_criteria) > 3:
+            st.warning("Por favor selecciona un máximo de 3 criterios")
+        elif selected_criteria:
+            # Crear selectores y generar recomendaciones
+            selected_values = {}
 
-            # Selector para elegir el valor específico
-            selected_value = st.selectbox(
-                f"Selecciona un valor de {selected_criterion}",
-                unique_values
-            )
+            # Contenedor para los selectores
+            with st.container():
+                for criterion in selected_criteria:
+                    unique_values = products[criterion].unique()
+                    selected_values[criterion] = st.selectbox(
+                        f"Selecciona {criterion}",
+                        unique_values,
+                        key=f"select_{criterion}"
+                    )
 
-            # Generar las recomendaciones basadas en el criterio y valor seleccionados
-            recommended_products = recommend_product(
-                selected_criterion,
-                products,
-                criterion_value=selected_value
-            )
+            # Generar y mostrar recomendaciones
+            if selected_values:
+                recommended_products = recommend_product(
+                    selected_criteria,
+                    products,
+                    criterion_values=selected_values
+                )
 
-            # Mostrar los productos recomendados
-            st.write(f"**Productos recomendados con {selected_criterion} = {selected_value}:**")
-            st.dataframe(recommended_products)
+                criteria_text = " Y ".join([f"{k}: {v}" for k, v in selected_values.items()])
+                st.write(f"**Productos recomendados basados en {criteria_text}:**")
 
-# Ejecutar la app de Streamlit
+                # Mostrar recomendaciones con formato
+                if 'Similitud' in recommended_products.columns:
+                    recommended_products['Similitud'] = recommended_products['Similitud'].round(3)
+                st.dataframe(recommended_products)
+
 if __name__ == "__main__":
     main()
