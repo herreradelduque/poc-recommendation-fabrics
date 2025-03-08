@@ -16,18 +16,42 @@ def main():
     with tab1:
         st.header("Buscar Producto en la Base de Datos")
 
-        product_name = st.selectbox("Selecciona un producto", products['Product'].unique())
+        # Agregar botón de limpiar filtros
+        if st.button("Limpiar Filtros"):
+            # Reset session state for all filters
+            for key in st.session_state.keys():
+                if key.startswith("filter_"):
+                    del st.session_state[key]
+            #st.experimental_rerun()
 
-        all_records = products[products['Product'] == product_name]
-        product_category = st.selectbox(
-            "Selecciona un material",
-            all_records['Material'].unique()
-        )
+        # Definir las columnas de filtrado disponibles (excluyendo Price y Color)
+        filter_columns = [col for col in products.columns if col not in ['Price', 'Color']]
 
-        filtered_records = all_records[all_records['Material'] == product_category]
-        st.write("**Registros del producto:**")
-        st.dataframe(filtered_records)
+        # Crear filtros dinámicos
+        filters = {}
+        current_data = products.copy()
 
+        for column in filter_columns:
+            if len(current_data) > 0:  # Verificar si hay datos para filtrar
+                # Usar session state para mantener el estado de los filtros
+                key = f"filter_{column}"
+                filters[column] = st.selectbox(
+                    f"Selecciona {column}",
+                    ['Todos'] + list(current_data[column].unique()),
+                    key=key
+                )
+
+                # Aplicar filtro si se selecciona un valor específico
+                if filters[column] != 'Todos':
+                    current_data = current_data[current_data[column] == filters[column]]
+
+        # Mostrar los resultados filtrados una sola vez al final
+        if len(current_data) > 0:
+            st.write("### Resultados encontrados")
+            st.write(f"Se encontraron {len(current_data)} productos que coinciden con los filtros:")
+            st.dataframe(current_data)
+        else:
+            st.warning("No se encontraron productos que coincidan con los filtros seleccionados.")
     # Pestaña 2: Recomendaciones
     with tab2:
         st.header("Recomendaciones de Productos")
